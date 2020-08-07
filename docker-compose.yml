@@ -1,0 +1,83 @@
+version: "3.7"
+
+volumes:
+  db-data:
+    external: false
+  redis:
+    external: false
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: mysql
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+  
+  redis:
+    image: "redis:6.0"
+    container_name: redis
+    command: redis-server
+    ports: 
+      - "6379:6379"
+    volumes:
+      - "redis:/data"
+  
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.8.1
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - cluster.name=docker-cluster
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits: 
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ".:/app"
+    ports:
+      - 9200:9200               
+
+  web:
+    depends_on:
+      - db
+      - redis
+      - elasticsearch
+    build: .
+    ports:
+      - "3001:3000"
+    environment:
+      ELASTICSEARCH_URL: elasticsearch
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      DB_HOST: db
+      RAILS_MAX_THREADS: 5
+    volumes:
+      - ".:/app"
+    links:
+      - db
+      - redis
+      - elasticsearch
+
+  sidekiq:
+    depends_on:
+      - web
+      - db
+      - redis
+    links:
+      - elasticsearch
+    build: .
+    command: sidekiq -C config/sidekiq.yml
+    volumes:
+      - ".:/app"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    entrypoint: ./sidekiq-entrypoint.sh
