@@ -1,25 +1,24 @@
 version: "3.7"
 
 volumes:
-  db-data:
-    external: false
+  data:
+    driver: local
   redis:
-    external: false
+    driver: local
+  data01:
+    driver: local
 
 services:
   db:
-    image: mysql:8.0
-    container_name: mysql
-    command: --default-authentication-plugin=mysql_native_password
-    restart: always
+    image: "mysql:8.0.21"
+    volumes:
+      - data:/var/lib/mysql
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_USER: root
+      MYSQL_USERNAME: root
       MYSQL_PASSWORD: root
     ports:
-      - "3307:3306"
-    volumes:
-      - db-data:/var/lib/mysql
+      - "3306:3306"
   
   redis:
     image: "redis:6.0"
@@ -42,7 +41,7 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - ".:/app"
+      - data01:/usr/share/elasticsearch/data
     ports:
       - 9200:9200               
 
@@ -53,31 +52,37 @@ services:
       - elasticsearch
     build: .
     ports:
-      - "3001:3000"
+      - "3000:3000"
     environment:
-      ELASTICSEARCH_URL: elasticsearch
       DB_USERNAME: root
       DB_PASSWORD: root
+      DB_DATABASE: Task_Management_System
+      DB_PORT: 3306
       DB_HOST: db
+      RAILS_ENV: development
       RAILS_MAX_THREADS: 5
+      REDIS_URL: redis://redis:6379/0
+      ELASTICSEARCH_URL: elasticsearch
     volumes:
       - ".:/app"
-    links:
+    links: 
       - db
       - redis
       - elasticsearch
 
-  sidekiq:
+  worker:
     depends_on:
       - web
       - db
       - redis
-    links:
-      - elasticsearch
     build: .
     command: sidekiq -C config/sidekiq.yml
     volumes:
       - ".:/app"
     environment:
       REDIS_URL: redis://redis:6379/0
+    links: 
+      - db
+      - redis
+      - web
     entrypoint: ./sidekiq-entrypoint.sh
